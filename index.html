@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Cierre y Apertura de Almacén</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js para gráficos del Dashboard -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Librería HTML5-QRCode para escaneo de códigos de barras y QR -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+        }
+        #reader video {
+            border-radius: 0.75rem;
+            object-fit: cover;
+        }
+        @keyframes scanLine {
+            0% { top: 15%; }
+            50% { top: 82%; }
+            100% { top: 15%; }
+        }
+        .scanner-laser {
+            position: absolute;
+            left: 10%;
+            right: 10%;
+            height: 2px;
+            background: #ef4444;
+            box-shadow: 0 0 8px #ef4444, 0 0 15px #ef4444;
+            animation: scanLine 2s infinite ease-in-out;
+            pointer-events: none;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Barra Superior -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 p-2.5 rounded-xl shadow-inner">
+                    <i class="fa-solid fa-warehouse text-xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold tracking-tight">Control de Almacén</h1>
+                    <p class="text-xs text-slate-400">Registro de Apertura, Cierre y Precintos</p>
+                </div>
+            </div>
+
+            <!-- Navegación entre Registro y Dashboard -->
+            <div class="flex items-center gap-2">
+                <nav class="bg-slate-800 p-1 rounded-xl flex items-center">
+                    <button id="tabRegistroBtn" onclick="switchView('registro')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Registro</span>
+                    </button>
+                    <button id="tabDashboardBtn" onclick="switchView('dashboard')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span>Dashboard</span>
+                    </button>
+                </nav>
+
+                <button onclick="toggleConfigModal()" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 hover:text-white transition flex items-center gap-2 text-sm" title="Configurar WhatsApp y SharePoint">
+                    <i class="fa-solid fa-gear text-blue-400 text-base"></i>
+                    <span class="hidden md:inline">Configurar</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- VISTA 1: FORMULARIO E HISTORIAL -->
+    <main id="viewRegistro" class="flex-grow max-w-5xl w-full mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Columna Izquierda: Formulario de Registro -->
+        <section class="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 h-fit">
+            <div class="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-clipboard-check text-blue-600"></i>
+                    Nuevo Registro
+                </h2>
+                <span id="liveClock" class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full"></span>
+            </div>
+
+            <form id="registroForm" class="space-y-4">
+                
+                <!-- Selector Visual de TIPO (Apertura / Cierre) -->
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Tipo de Operación *</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="tipo" value="APERTURA" class="peer sr-only" checked required>
+                            <div class="p-3 rounded-xl border-2 border-slate-200 bg-slate-50 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition flex items-center justify-center gap-2 font-semibold text-sm text-slate-600">
+                                <i class="fa-solid fa-lock-open text-base"></i>
+                                <span>APERTURA</span>
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="tipo" value="CIERRE" class="peer sr-only" required>
+                            <div class="p-3 rounded-xl border-2 border-slate-200 bg-slate-50 peer-checked:border-rose-500 peer-checked:bg-rose-50 peer-checked:text-rose-700 transition flex items-center justify-center gap-2 font-semibold text-sm text-slate-600">
+                                <i class="fa-solid fa-lock text-base"></i>
+                                <span>CIERRE</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Centro y Almacén -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="centro" class="block text-xs font-semibold text-slate-700 mb-1">Centro / Planta *</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-building text-sm"></i>
+                            </span>
+                            <input type="text" id="centro" required placeholder="Ej. CD Piura / Sede Norte" 
+                                class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="almacen" class="block text-xs font-semibold text-slate-700 mb-1">Almacén *</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-boxes-stacked text-sm"></i>
+                            </span>
+                            <input type="text" id="almacen" required placeholder="Ej. ALM-01 / Frío" 
+                                class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Puerta y Fecha/Hora -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="puerta" class="block text-xs font-semibold text-slate-700 mb-1">Puerta / Muelle *</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-door-closed text-sm"></i>
+                            </span>
+                            <input type="text" id="puerta" required placeholder="Ej. Puerta 3 / Principal" 
+                                class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label for="fechaHora" class="block text-xs font-semibold text-slate-700">Fecha y Hora *</label>
+                            <button type="button" onclick="setCurrentDateTime()" class="text-[11px] text-blue-600 hover:underline font-medium">Ahora</button>
+                        </div>
+                        <input type="datetime-local" id="fechaHora" required 
+                            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                    </div>
+                </div>
+
+                <!-- Precinto con Escáner de Código de Barras -->
+                <div>
+                    <label for="precinto" class="block text-xs font-semibold text-slate-700 mb-1">N° de Precinto *</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-grow">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-barcode text-sm"></i>
+                            </span>
+                            <input type="text" id="precinto" required placeholder="Escanee o escriba código" 
+                                class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-semibold uppercase focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                        <button type="button" onclick="openScanner()" 
+                            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-white rounded-xl font-medium text-sm flex items-center gap-2 transition shadow-sm shrink-0">
+                            <i class="fa-solid fa-qrcode text-blue-400"></i>
+                            <span>Escanear</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Responsable -->
+                <div>
+                    <label for="responsable" class="block text-xs font-semibold text-slate-700 mb-1">Responsable *</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                            <i class="fa-solid fa-user-shield text-sm"></i>
+                        </span>
+                        <input type="text" id="responsable" required placeholder="Nombre y Apellido del encargado" 
+                            class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                    </div>
+                </div>
+
+                <!-- Observaciones Opcionales -->
+                <div>
+                    <label for="observaciones" class="block text-xs font-semibold text-slate-700 mb-1">Observaciones (Opcional)</label>
+                    <textarea id="observaciones" rows="2" placeholder="Novedades del precinto, estado de puerta, etc." 
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition resize-none"></textarea>
+                </div>
+
+                <!-- Botón Principal Guardar + WhatsApp + SharePoint -->
+                <div class="pt-2">
+                    <button type="submit" id="submitBtn"
+                        class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2.5 transition text-sm sm:text-base">
+                        <i class="fa-brands fa-whatsapp text-xl"></i>
+                        <span>Guardar y Enviar por WhatsApp</span>
+                    </button>
+                    <p id="cloudSyncHint" class="text-[11px] text-center text-slate-400 mt-2">
+                        Se guardará localmente y abrirá WhatsApp automáticamente
+                    </p>
+                </div>
+            </form>
+        </section>
+
+        <!-- Columna Derecha: Historial de Registros -->
+        <section class="lg:col-span-6 flex flex-col space-y-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex-grow flex flex-col">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-blue-600"></i>
+                            Historial Reciente
+                        </h2>
+                        <p class="text-xs text-slate-500"><span id="recordCount">0</span> registros guardados en este equipo</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportCSV()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition" title="Descargar Excel/CSV">
+                            <i class="fa-solid fa-file-csv text-emerald-600"></i>
+                            <span>CSV</span>
+                        </button>
+                        <button onclick="confirmClearHistory()" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold transition" title="Limpiar historial">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Buscador rápido -->
+                <div class="relative mb-4">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                    </span>
+                    <input type="text" id="searchInput" onkeyup="renderHistory()" placeholder="Buscar por precinto, almacén, centro o responsable..." 
+                        class="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+
+                <!-- Contenedor de tarjetas de historial -->
+                <div id="historyList" class="space-y-3 overflow-y-auto max-h-[520px] pr-1 flex-grow">
+                    <!-- Los registros se renderizan aquí -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- VISTA 2: DASHBOARD EN TIEMPO REAL -->
+    <section id="viewDashboard" class="hidden flex-grow max-w-5xl w-full mx-auto px-4 py-6 space-y-6">
+        
+        <!-- Cabecera del Dashboard y Sincronización -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line text-blue-600"></i>
+                    Panel de Control en Vivo
+                </h2>
+                <p id="dashboardSourceLabel" class="text-xs text-slate-500 mt-0.5">Mostrando datos locales del dispositivo</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <select id="dashCentroFilter" onchange="renderDashboard()" class="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-700 outline-none">
+                    <option value="TODOS">Todos los Centros</option>
+                </select>
+                <button onclick="fetchSharePointDashboard()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm">
+                    <i id="syncDashIcon" class="fa-solid fa-rotate"></i>
+                    <span>Actualizar SharePoint</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tarjetas KPI -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between text-slate-400 mb-1">
+                    <span class="text-xs font-semibold uppercase">Total Registros</span>
+                    <i class="fa-solid fa-clipboard-list text-blue-500"></i>
+                </div>
+                <p id="kpiTotal" class="text-2xl font-bold text-slate-800">0</p>
+                <span class="text-[11px] text-slate-400">Histórico acumulado</span>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between text-emerald-600 mb-1">
+                    <span class="text-xs font-semibold uppercase">Aperturas</span>
+                    <i class="fa-solid fa-lock-open"></i>
+                </div>
+                <p id="kpiAperturas" class="text-2xl font-bold text-emerald-600">0</p>
+                <span class="text-[11px] text-slate-400">Operaciones de ingreso</span>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between text-rose-600 mb-1">
+                    <span class="text-xs font-semibold uppercase">Cierres</span>
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <p id="kpiCierres" class="text-2xl font-bold text-rose-600">0</p>
+                <span class="text-[11px] text-slate-400">Precintados completados</span>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between text-amber-600 mb-1">
+                    <span class="text-xs font-semibold uppercase">Puertas Activas</span>
+                    <i class="fa-solid fa-door-open"></i>
+                </div>
+                <p id="kpiAbiertasAhora" class="text-2xl font-bold text-slate-800">0</p>
+                <span class="text-[11px] text-slate-400">En estado ABIERTO ahora</span>
+            </div>
+        </div>
+
+        <!-- Estado Actual por Almacén / Puerta + Gráfico -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Estado en vivo de puertas -->
+            <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-tower-broadcast text-emerald-500"></i>
+                    Estado Actual por Almacén y Puerta
+                </h3>
+                <div id="doorStatusList" class="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                    <!-- Dinámico -->
+                </div>
+            </div>
+
+            <!-- Gráfico de Operaciones -->
+            <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-column text-blue-600"></i>
+                    Aperturas vs. Cierres por Centro
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="operationsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- MODAL 1: ESCÁNER DE CÓDIGO DE BARRAS / QR -->
+    <div id="scannerModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl">
+            <div class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-barcode text-blue-400"></i>
+                    <h3 class="font-bold text-sm">Escanear Código de Precinto</h3>
+                </div>
+                <button onclick="closeScanner()" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-5">
+                <p class="text-xs text-slate-500 text-center mb-3">
+                    Apunte la cámara al código de barras o QR del precinto.
+                </p>
+                
+                <!-- Visor de cámara -->
+                <div class="relative bg-slate-950 rounded-xl overflow-hidden min-h-[260px] flex items-center justify-center">
+                    <div id="reader" class="w-full h-full flex items-center justify-center"></div>
+                </div>
+
+                <!-- Selector de cámara si hay varias -->
+                <div id="cameraSelectContainer" class="mt-3 hidden">
+                    <select id="cameraSelect" onchange="switchCamera(this.value)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-700 outline-none">
+                    </select>
+                </div>
+
+                <div id="scannerStatus" class="mt-3 text-center text-xs font-medium text-blue-600">
+                    Iniciando cámara...
+                </div>
+
+                <!-- Respaldo de cámara nativa si el iframe/archivo local bloquea getUserMedia -->
+                <div id="nativeCaptureFallback" class="hidden mt-3 pt-3 border-t border-slate-100 text-center space-y-2">
+                    <label class="cursor-pointer w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-sm">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>Abrir Cámara Nativa del Celular</span>
+                        <input type="file" accept="image/*" capture="environment" onchange="scanFromFile(event)" class="hidden">
+                    </label>
+                    <button type="button" onclick="openScanner()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl text-xs transition">
+                        Reintentar permiso de video en vivo
+                    </button>
+                </div>
+
+                <div class="mt-4 flex justify-end">
+                    <button type="button" onclick="closeScanner()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: CONFIGURACIÓN DE WHATSAPP Y SHAREPOINT / ONEDRIVE -->
+    <div id="configModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-blue-600"></i>
+                    Configuración de Integraciones
+                </h3>
+                <button onclick="toggleConfigModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Sección WhatsApp -->
+            <div class="mb-4">
+                <label class="flex items-center gap-1.5 text-xs font-bold uppercase text-emerald-700 mb-1.5">
+                    <i class="fa-brands fa-whatsapp text-base"></i>
+                    1. Destinatario de WhatsApp
+                </label>
+                <p class="text-[11px] text-slate-500 mb-2 leading-relaxed">
+                    Si deja este campo vacío, WhatsApp le permitirá elegir el grupo o contacto manualmente cada vez. Si ingresa un número (con código de país, ej. <strong>51987654321</strong>), el mensaje irá directo a ese chat.
+                </p>
+                <input type="tel" id="wppPhoneInput" placeholder="Ej. 51987654321 (Opcional)" 
+                    class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <!-- Sección SharePoint / OneDrive -->
+            <div class="mb-4 pt-4 border-t border-slate-100">
+                <label class="flex items-center gap-1.5 text-xs font-bold uppercase text-blue-700 mb-1.5">
+                    <i class="fa-solid fa-cloud-arrow-up text-base"></i>
+                    2. URL Guardar en SharePoint (POST)
+                </label>
+                <p class="text-[11px] text-slate-500 mb-2 leading-relaxed">
+                    Pegue la URL HTTP POST de <strong>Power Automate</strong> para guardar cada registro automáticamente en SharePoint / OneDrive sin pedir inicio de sesión.
+                </p>
+                <input type="url" id="webhookUrlInput" placeholder="https://prod-xx.westus.logic.azure.com:443/workflows/..." 
+                    class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+
+            <!-- Sección Lectura Dashboard desde SharePoint -->
+            <div class="mb-5 pt-4 border-t border-slate-100">
+                <label class="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-700 mb-1.5">
+                    <i class="fa-solid fa-chart-pie text-base"></i>
+                    3. URL Leer Dashboard desde SharePoint (GET)
+                </label>
+                <p class="text-[11px] text-slate-500 mb-2 leading-relaxed">
+                    Opcional. URL de Power Automate que devuelve la lista de registros en JSON para ver todos los centros en el Dashboard.
+                </p>
+                <input type="url" id="dashboardUrlInput" placeholder="https://prod-xx.westus.logic.azure.com:443/workflows/..." 
+                    class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="saveWppConfig()" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition shadow-sm">
+                    Guardar Configuración
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: CONFIRMACIÓN PARA BORRAR HISTORIAL -->
+    <div id="clearModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+            <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+            <h3 class="font-bold text-slate-800 text-base mb-1">¿Vaciar historial local?</h3>
+            <p class="text-xs text-slate-500 mb-5">Esta acción eliminará los registros almacenados en este navegador (no borra los que ya subieron a SharePoint).</p>
+            <div class="flex gap-2">
+                <button onclick="closeClearModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm">Cancelar</button>
+                <button onclick="clearHistory()" class="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-sm">Sí, borrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notificación Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl text-sm font-medium flex items-center gap-2.5 transform translate-y-24 opacity-0 transition-all duration-300 z-50">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toastMsg">Registro guardado</span>
+    </div>
+
+    <!-- Elemento oculto para decodificación de archivo -->
+    <div id="file-scanner-hidden" class="hidden"></div>
+
+    <script>
+        // Variables globales
+        let nativeStream = null;
+        let scanInterval = null;
+        let operationsChartInstance = null;
+        let registros = JSON.parse(localStorage.getItem('almacen_registros')) || [];
+        let dashboardRegistros = [...registros];
+        let wppPhone = localStorage.getItem('almacen_wpp_phone') || '';
+        let webhookUrl = localStorage.getItem('almacen_webhook_url') || '';
+        let dashboardUrl = localStorage.getItem('almacen_dashboard_url') || '';
+
+        // Inicialización al cargar la página
+        window.onload = function() {
+            setCurrentDateTime();
+            updateLiveClock();
+            setInterval(updateLiveClock, 1000);
+            
+            document.getElementById('wppPhoneInput').value = wppPhone;
+            document.getElementById('webhookUrlInput').value = webhookUrl;
+            document.getElementById('dashboardUrlInput').value = dashboardUrl;
+            updateSyncHint();
+            
+            // Cargar últimos valores frecuentes para agilizar el uso
+            const lastCentro = localStorage.getItem('last_centro');
+            const lastResponsable = localStorage.getItem('last_responsable');
+            if (lastCentro) document.getElementById('centro').value = lastCentro;
+            if (lastResponsable) document.getElementById('responsable').value = lastResponsable;
+
+            renderHistory();
+        };
+
+        function updateSyncHint() {
+            const hint = document.getElementById('cloudSyncHint');
+            if (webhookUrl) {
+                hint.innerHTML = '<i class="fa-solid fa-cloud-check text-blue-500"></i> Conectado a SharePoint/OneDrive + WhatsApp';
+            } else {
+                hint.textContent = 'Se guardará localmente y abrirá WhatsApp automáticamente';
+            }
+        }
+
+        // Cambiar entre pestaña Registro y Dashboard
+        function switchView(view) {
+            const viewReg = document.getElementById('viewRegistro');
+            const viewDash = document.getElementById('viewDashboard');
+            const btnReg = document.getElementById('tabRegistroBtn');
+            const btnDash = document.getElementById('tabDashboardBtn');
+
+            if (view === 'dashboard') {
+                viewReg.classList.add('hidden');
+                viewDash.classList.remove('hidden');
+                btnDash.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white transition flex items-center gap-1.5';
+                btnReg.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5';
+                
+                dashboardRegistros = [...registros];
+                renderDashboard();
+                if (dashboardUrl) {
+                    fetchSharePointDashboard();
+                }
+            } else {
+                viewDash.classList.add('hidden');
+                viewReg.classList.remove('hidden');
+                btnReg.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white transition flex items-center gap-1.5';
+                btnDash.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5';
+            }
+        }
+
+        // Configurar fecha y hora actual en formato datetime-local
+        function setCurrentDateTime() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('fechaHora').value = now.toISOString().slice(0, 16);
+        }
+
+        function updateLiveClock() {
+            const now = new Date();
+            document.getElementById('liveClock').textContent = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        // ==========================================
+        // ESCÁNER DE CÓDIGO DE BARRAS / QR
+        // ==========================================
+        async function openScanner() {
+            const modal = document.getElementById('scannerModal');
+            const status = document.getElementById('scannerStatus');
+            const readerDiv = document.getElementById('reader');
+            const fallbackDiv = document.getElementById('nativeCaptureFallback');
+            
+            modal.classList.remove('hidden');
+            fallbackDiv.classList.add('hidden');
+            status.className = "mt-3 text-center text-xs font-medium text-blue-600";
+            status.textContent = "Iniciando cámara...";
+
+            readerDiv.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-6 text-slate-400">
+                    <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-blue-500"></i>
+                    <p class="text-xs">Conectando con la cámara...</p>
+                </div>
+            `;
+
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Navegador sin soporte de cámara en vivo");
+                }
+
+                nativeStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: "environment" } },
+                    audio: false
+                });
+
+                await populateCameraList();
+                startVideoStream(nativeStream);
+
+            } catch (err) {
+                status.className = "mt-3 text-center text-xs font-medium text-amber-600";
+                status.textContent = "Cámara en vivo bloqueada por el navegador o vista previa. Usa la cámara directa:";
+                fallbackDiv.classList.remove('hidden');
+                readerDiv.innerHTML = `
+                    <div class="p-6 text-center text-slate-300 space-y-2">
+                        <i class="fa-solid fa-video-slash text-3xl text-amber-400"></i>
+                        <p class="text-xs font-semibold">Permiso de video en vivo restringido</p>
+                        <p class="text-[11px] text-slate-400">Si abriste el archivo localmente o en vista previa, usa el botón azul de abajo o súbelo a un enlace HTTPS.</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function populateCameraList() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                const selectContainer = document.getElementById('cameraSelectContainer');
+                const select = document.getElementById('cameraSelect');
+
+                if (videoDevices.length > 1) {
+                    selectContainer.classList.remove('hidden');
+                    select.innerHTML = videoDevices.map((d, idx) => 
+                        `<option value="${d.deviceId}">${d.label || 'Cámara ' + (idx + 1)}</option>`
+                    ).join('');
+                } else {
+                    selectContainer.classList.add('hidden');
+                }
+            } catch (e) {}
+        }
+
+        async function switchCamera(deviceId) {
+            if (nativeStream) {
+                nativeStream.getTracks().forEach(t => t.stop());
+            }
+            if (scanInterval) clearInterval(scanInterval);
+
+            try {
+                nativeStream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId } },
+                    audio: false
+                });
+                startVideoStream(nativeStream);
+            } catch (err) {
+                showToast('No se pudo cambiar de cámara', true);
+            }
+        }
+
+        function startVideoStream(stream) {
+            const readerDiv = document.getElementById('reader');
+            const status = document.getElementById('scannerStatus');
+
+            readerDiv.innerHTML = `
+                <div class="relative w-full h-64 bg-black flex items-center justify-center overflow-hidden">
+                    <video id="liveScannerVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                    <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                        <div class="w-56 h-40 border-2 border-emerald-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative">
+                            <div class="scanner-laser"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const video = document.getElementById('liveScannerVideo');
+            video.srcObject = stream;
+            status.className = "mt-3 text-center text-xs font-medium text-emerald-600";
+            status.textContent = "Cámara activa • Enfoque el código QR o de barras";
+
+            if ('BarcodeDetector' in window) {
+                const detector = new BarcodeDetector({
+                    formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'itf']
+                });
+
+                scanInterval = setInterval(async () => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        try {
+                            const barcodes = await detector.detect(video);
+                            if (barcodes.length > 0) {
+                                handleScannedCode(barcodes[0].rawValue);
+                            }
+                        } catch (e) {}
+                    }
+                }, 250);
+            } else {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const html5Qr = new Html5Qrcode("file-scanner-hidden");
+
+                scanInterval = setInterval(async () => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        canvas.toBlob(async (blob) => {
+                            if (!blob) return;
+                            try {
+                                const file = new File([blob], "frame.jpg", { type: "image/jpeg" });
+                                const result = await html5Qr.scanFile(file, false);
+                                if (result) handleScannedCode(result);
+                            } catch (e) {}
+                        }, 'image/jpeg', 0.7);
+                    }
+                }, 450);
+            }
+        }
+
+        async function scanFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('scannerStatus');
+            status.className = "mt-3 text-center text-xs font-medium text-blue-600";
+            status.textContent = "Leyendo código de la foto...";
+
+            try {
+                const html5Qr = new Html5Qrcode("file-scanner-hidden");
+                const decodedText = await html5Qr.scanFile(file, true);
+                handleScannedCode(decodedText);
+            } catch (err) {
+                status.className = "mt-3 text-center text-xs font-medium text-rose-600";
+                status.textContent = "No se detectó ningún código legible. Intente acercar más la cámara.";
+            }
+            event.target.value = '';
+        }
+
+        function handleScannedCode(code) {
+            playBeepSound();
+            document.getElementById('precinto').value = code.toUpperCase();
+            showToast(`Precinto escaneado: ${code}`);
+            closeScanner();
+        }
+
+        function closeScanner() {
+            const modal = document.getElementById('scannerModal');
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+            if (nativeStream) {
+                nativeStream.getTracks().forEach(track => track.stop());
+                nativeStream = null;
+            }
+            modal.classList.add('hidden');
+        }
+
+        function playBeepSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.12);
+            } catch (e) {}
+        }
+
+        // ==========================================
+        // GUARDADO, SHAREPOINT Y ENVÍO A WHATSAPP
+        // ==========================================
+        document.getElementById('registroForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const tipo = document.querySelector('input[name="tipo"]:checked').value;
+            const centro = document.getElementById('centro').value.trim();
+            const almacen = document.getElementById('almacen').value.trim();
+            const puerta = document.getElementById('puerta').value.trim();
+            const fechaHoraRaw = document.getElementById('fechaHora').value;
+            const precinto = document.getElementById('precinto').value.trim().toUpperCase();
+            const responsable = document.getElementById('responsable').value.trim();
+            const observaciones = document.getElementById('observaciones').value.trim();
+
+            const fechaObj = new Date(fechaHoraRaw);
+            const fechaFormateada = fechaObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const horaFormateada = fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+            const nuevoRegistro = {
+                id: Date.now(),
+                tipo,
+                centro,
+                almacen,
+                puerta,
+                fechaHoraRaw,
+                fechaFormateada,
+                horaFormateada,
+                precinto,
+                responsable,
+                observaciones,
+                sincronizado: false
+            };
+
+            // Guardar datos frecuentes
+            localStorage.setItem('last_centro', centro);
+            localStorage.setItem('last_responsable', responsable);
+
+            // Enviar a Power Automate (SharePoint / OneDrive) si está configurado
+            if (webhookUrl) {
+                const submitBtn = document.getElementById('submitBtn');
+                const originalText = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Sincronizando con SharePoint...</span>`;
+
+                try {
+                    const response = await fetch(webhookUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            Centro: nuevoRegistro.centro,
+                            Almacen: nuevoRegistro.almacen,
+                            Puerta: nuevoRegistro.puerta,
+                            Estado: nuevoRegistro.tipo,
+                            Precinto: nuevoRegistro.precinto,
+                            Fecha: nuevoRegistro.fechaFormateada,
+                            Hora: nuevoRegistro.horaFormateada,
+                            Responsable: nuevoRegistro.responsable,
+                            Observaciones: nuevoRegistro.observaciones || 'Ninguna'
+                        })
+                    });
+                    if (response.ok) {
+                        nuevoRegistro.sincronizado = true;
+                    }
+                } catch (error) {
+                    console.warn('No se pudo sincronizar con SharePoint en este momento:', error);
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }
+            }
+
+            // Guardar en historial local
+            registros.unshift(nuevoRegistro);
+            localStorage.setItem('almacen_registros', JSON.stringify(registros));
+            renderHistory();
+
+            // Limpiar campos variables
+            document.getElementById('precinto').value = '';
+            document.getElementById('observaciones').value = '';
+            setCurrentDateTime();
+
+            showToast(nuevoRegistro.sincronizado ? 'Guardado en SharePoint y abriendo WhatsApp' : 'Guardado y abriendo WhatsApp...');
+
+            setTimeout(() => {
+                sendToWhatsApp(nuevoRegistro);
+            }, 350);
+        });
+
+        function sendToWhatsApp(reg) {
+            const iconoTipo = reg.tipo === 'APERTURA' ? '🟢' : '🔴';
+            
+            let mensaje = `${iconoTipo} *REGISTRO DE ${reg.tipo} DE ALMACÉN*\n`;
+            mensaje += `━━━━━━━━━━━━━━━━━━━━\n`;
+            mensaje += `🏢 *Centro:* ${reg.centro}\n`;
+            mensaje += `📦 *Almacén:* ${reg.almacen}\n`;
+            mensaje += `🚪 *Puerta:* ${reg.puerta}\n`;
+            mensaje += `🔒 *Precinto:* ${reg.precinto}\n`;
+            mensaje += `📅 *Fecha:* ${reg.fechaFormateada}\n`;
+            mensaje += `⏰ *Hora:* ${reg.horaFormateada}\n`;
+            mensaje += `👤 *Responsable:* ${reg.responsable}\n`;
+            if (reg.observaciones) {
+                mensaje += `📝 *Obs:* ${reg.observaciones}\n`;
+            }
+            mensaje += `━━━━━━━━━━━━━━━━━━━━`;
+
+            const textoCodificado = encodeURIComponent(mensaje);
+            const cleanPhone = wppPhone.replace(/\D/g, '');
+            const url = cleanPhone 
+                ? `https://wa.me/${cleanPhone}?text=${textoCodificado}`
+                : `https://api.whatsapp.com/send?text=${textoCodificado}`;
+
+            window.open(url, '_blank');
+        }
+
+        // ==========================================
+        // RENDERIZADO DE HISTORIAL LOCAL
+        // ==========================================
+        function renderHistory() {
+            const listContainer = document.getElementById('historyList');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            const filtrados = registros.filter(r => 
+                r.precinto.toLowerCase().includes(searchTerm) ||
+                r.almacen.toLowerCase().includes(searchTerm) ||
+                r.centro.toLowerCase().includes(searchTerm) ||
+                r.puerta.toLowerCase().includes(searchTerm) ||
+                r.responsable.toLowerCase().includes(searchTerm)
+            );
+
+            document.getElementById('recordCount').textContent = registros.length;
+
+            if (filtrados.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-12 px-4 text-slate-400">
+                        <i class="fa-solid fa-folder-open text-4xl mb-3 text-slate-300"></i>
+                        <p class="text-sm font-medium text-slate-500">No hay registros para mostrar</p>
+                        <p class="text-xs mt-1">Complete el formulario para registrar una apertura o cierre.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            listContainer.innerHTML = filtrados.map(reg => {
+                const isApertura = reg.tipo === 'APERTURA';
+                const badgeClass = isApertura 
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+                    : 'bg-rose-100 text-rose-700 border-rose-200';
+                const iconClass = isApertura ? 'fa-lock-open' : 'fa-lock';
+
+                const cloudBadge = webhookUrl 
+                    ? (reg.sincronizado 
+                        ? `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-medium" title="Sincronizado con SharePoint"><i class="fa-solid fa-cloud-check"></i> SharePoint</span>`
+                        : `<span class="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded font-medium" title="Solo guardado en dispositivo"><i class="fa-solid fa-cloud-exclamation"></i> Local</span>`)
+                    : '';
+
+                return `
+                    <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:shadow-sm transition">
+                        <div class="flex items-start justify-between gap-2 mb-2">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">
+                                    <i class="fa-solid ${iconClass} text-[10px]"></i>
+                                    ${reg.tipo}
+                                </span>
+                                ${cloudBadge}
+                            </div>
+                            <span class="text-[11px] font-medium text-slate-500 shrink-0">
+                                <i class="fa-regular fa-calendar mr-1"></i>${reg.fechaFormateada} • ${reg.horaFormateada}
+                            </span>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs mb-2.5">
+                            <div><span class="text-slate-400">Centro:</span> <strong class="text-slate-700">${reg.centro}</strong></div>
+                            <div><span class="text-slate-400">Almacén:</span> <strong class="text-slate-700">${reg.almacen}</strong></div>
+                            <div><span class="text-slate-400">Puerta:</span> <strong class="text-slate-700">${reg.puerta}</strong></div>
+                            <div><span class="text-slate-400">Precinto:</span> <span class="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">${reg.precinto}</span></div>
+                        </div>
+
+                        ${reg.observaciones ? `<p class="text-[11px] text-slate-500 italic mb-2.5 bg-slate-100 p-2 rounded-lg">"${reg.observaciones}"</p>` : ''}
+
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-200/70">
+                            <span class="text-[11px] text-slate-500 flex items-center gap-1">
+                                <i class="fa-solid fa-user text-slate-400"></i> ${reg.responsable}
+                            </span>
+                            <button onclick='reenviarRegistro(${reg.id})' 
+                                class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-lg text-xs transition">
+                                <i class="fa-brands fa-whatsapp"></i>
+                                <span>Reenviar</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function reenviarRegistro(id) {
+            const reg = registros.find(r => r.id === id);
+            if (reg) sendToWhatsApp(reg);
+        }
+
+        // ==========================================
+        // DASHBOARD Y LECTURA DESDE SHAREPOINT
+        // ==========================================
+        async function fetchSharePointDashboard() {
+            if (!dashboardUrl) {
+                showToast('Configura la URL de lectura SharePoint en Ajustes', true);
+                return;
+            }
+
+            const icon = document.getElementById('syncDashIcon');
+            const label = document.getElementById('dashboardSourceLabel');
+            icon.classList.add('fa-spin');
+            label.textContent = 'Sincronizando registros desde SharePoint...';
+
+            try {
+                const response = await fetch(dashboardUrl);
+                if (!response.ok) throw new Error('Error de red');
+                const data = await response.json();
+                
+                const items = Array.isArray(data) ? data : (data.value || []);
+                
+                if (items.length > 0) {
+                    dashboardRegistros = items.map(item => ({
+                        tipo: (item.Estado || item.estado || item.tipo || item.Tipo || 'APERTURA').toUpperCase(),
+                        centro: item.Centro || item.centro || 'Sin Centro',
+                        almacen: item.Almacen || item.almacen || 'Sin Almacén',
+                        puerta: item.Puerta || item.puerta || 'General',
+                        precinto: item.Precinto || item.precinto || '-',
+                        fechaFormateada: item.Fecha || item.fecha || '',
+                        horaFormateada: item.Hora || item.hora || '',
+                        responsable: item.Responsable || item.responsable || ''
+                    }));
+                    label.textContent = `Conectado a SharePoint • ${dashboardRegistros.length} registros en la nube`;
+                    showToast('Dashboard actualizado desde SharePoint');
+                } else {
+                    label.textContent = 'SharePoint conectado (0 registros encontrados)';
+                }
+                renderDashboard();
+            } catch (error) {
+                label.textContent = 'Error al leer SharePoint • Mostrando datos locales';
+                showToast('No se pudo conectar con la URL de lectura', true);
+            } finally {
+                icon.classList.remove('fa-spin');
+            }
+        }
+
+        function renderDashboard() {
+            const filterSelect = document.getElementById('dashCentroFilter');
+            const selectedCentro = filterSelect.value;
+
+            const centrosUnicos = [...new Set(dashboardRegistros.map(r => r.centro).filter(Boolean))];
+            filterSelect.innerHTML = `<option value="TODOS">Todos los Centros (${centrosUnicos.length})</option>` +
+                centrosUnicos.map(c => `<option value="${c}" ${c === selectedCentro ? 'selected' : ''}>${c}</option>`).join('');
+
+            const dataFiltrada = selectedCentro === 'TODOS' 
+                ? dashboardRegistros 
+                : dashboardRegistros.filter(r => r.centro === selectedCentro);
+
+            const total = dataFiltrada.length;
+            const aperturas = dataFiltrada.filter(r => r.tipo === 'APERTURA').length;
+            const cierres = dataFiltrada.filter(r => r.tipo === 'CIERRE').length;
+
+            // Determinar estado actual por cada combinación Centro + Almacén + Puerta (el registro más reciente manda)
+            const estadoPuertasMap = new Map();
+            dataFiltrada.forEach(reg => {
+                const key = `${reg.centro}|${reg.almacen}|${reg.puerta}`;
+                if (!estadoPuertasMap.has(key)) {
+                    estadoPuertasMap.set(key, reg);
+                }
+            });
+
+            const puertasArray = Array.from(estadoPuertasMap.values());
+            const abiertasAhora = puertasArray.filter(p => p.tipo === 'APERTURA').length;
+
+            document.getElementById('kpiTotal').textContent = total;
+            document.getElementById('kpiAperturas').textContent = aperturas;
+            document.getElementById('kpiCierres').textContent = cierres;
+            document.getElementById('kpiAbiertasAhora').textContent = abiertasAhora;
+
+            const doorList = document.getElementById('doorStatusList');
+            if (puertasArray.length === 0) {
+                doorList.innerHTML = `<p class="text-xs text-slate-400 text-center py-8">Registra una apertura o cierre para ver el estado en vivo.</p>`;
+            } else {
+                doorList.innerHTML = puertasArray.map(p => {
+                    const isOpen = p.tipo === 'APERTURA';
+                    return `
+                        <div class="flex items-center justify-between p-3 rounded-xl border ${isOpen ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200 bg-slate-50'}">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-xs text-slate-800">${p.centro} • ${p.almacen}</span>
+                                    <span class="text-[11px] bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-slate-600">${p.puerta}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mt-1">
+                                    Último precinto: <strong class="font-mono text-blue-700">${p.precinto}</strong> • ${p.fechaFormateada} ${p.horaFormateada} (${p.responsable})
+                                </p>
+                            </div>
+                            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shrink-0 ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
+                                <i class="fa-solid ${isOpen ? 'fa-lock-open' : 'fa-lock'}"></i>
+                                ${isOpen ? 'ABIERTO' : 'CERRADO'}
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            renderChart(dataFiltrada);
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('operationsChart').getContext('2d');
+            const centros = [...new Set(data.map(r => r.centro))];
+            
+            const aperturasData = centros.map(c => data.filter(r => r.centro === c && r.tipo === 'APERTURA').length);
+            const cierresData = centros.map(c => data.filter(r => r.centro === c && r.tipo === 'CIERRE').length);
+
+            if (operationsChartInstance) {
+                operationsChartInstance.destroy();
+            }
+
+            operationsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: centros.length ? centros : ['Sin datos'],
+                    datasets: [
+                        {
+                            label: 'Aperturas',
+                            data: centros.length ? aperturasData : [0],
+                            backgroundColor: '#10b981',
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Cierres',
+                            data: centros.length ? cierresData : [0],
+                            backgroundColor: '#f43f5e',
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } },
+                        x: { ticks: { font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        // ==========================================
+        // CONFIGURACIÓN Y EXPORTACIÓN
+        // ==========================================
+        function toggleConfigModal() {
+            const modal = document.getElementById('configModal');
+            modal.classList.toggle('hidden');
+        }
+
+        function saveWppConfig() {
+            wppPhone = document.getElementById('wppPhoneInput').value.trim();
+            webhookUrl = document.getElementById('webhookUrlInput').value.trim();
+            dashboardUrl = document.getElementById('dashboardUrlInput').value.trim();
+            localStorage.setItem('almacen_wpp_phone', wppPhone);
+            localStorage.setItem('almacen_webhook_url', webhookUrl);
+            localStorage.setItem('almacen_dashboard_url', dashboardUrl);
+            toggleConfigModal();
+            updateSyncHint();
+            renderHistory();
+            showToast('Configuración guardada correctamente');
+        }
+
+        function confirmClearHistory() {
+            if (registros.length === 0) return;
+            document.getElementById('clearModal').classList.remove('hidden');
+        }
+
+        function closeClearModal() {
+            document.getElementById('clearModal').classList.add('hidden');
+        }
+
+        function clearHistory() {
+            registros = [];
+            localStorage.removeItem('almacen_registros');
+            renderHistory();
+            closeClearModal();
+            showToast('Historial local eliminado');
+        }
+
+        function exportCSV() {
+            if (registros.length === 0) {
+                showToast('No hay datos para exportar', true);
+                return;
+            }
+
+            const headers = ['Tipo', 'Centro', 'Almacen', 'Puerta', 'Precinto', 'Fecha', 'Hora', 'Responsable', 'Observaciones'];
+            const rows = registros.map(r => [
+                r.tipo,
+                `"${r.centro}"`,
+                `"${r.almacen}"`,
+                `"${r.puerta}"`,
+                `"${r.precinto}"`,
+                r.fechaFormateada,
+                r.horaFormateada,
+                `"${r.responsable}"`,
+                `"${r.observaciones || ''}"`
+            ]);
+
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+                + headers.join(",") + "\n" 
+                + rows.map(e => e.join(",")).join("\n");
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Control_Almacen_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Archivo CSV descargado');
+        }
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            document.getElementById('toastMsg').textContent = msg;
+            
+            icon.className = isError 
+                ? 'fa-solid fa-circle-exclamation text-rose-400' 
+                : 'fa-solid fa-circle-check text-emerald-400';
+
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
